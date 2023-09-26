@@ -128,8 +128,4 @@ for s in range(len(sites)):
 #save the dataframe of the prediction   
 d = {"Site": sites_out, "Predictions": cv_pred}
 df = pd.DataFrame(d)
-df.to_csv(f"notouchy_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")
-
-# normal={"mean":train_mean, "std":train_std}
-# out= pd.DataFrame(normal)
-# out.to_csv("denormalising tool_notouchy.csv")    
+df.to_csv(f"notouchy_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")   
