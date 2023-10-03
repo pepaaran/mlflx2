@@ -113,7 +113,7 @@ for s in range(len(sites)):
             c = torch.FloatTensor(conditional_test).to(DEVICE)
             y_pred = model(x, c)
             test_loss = F.mse_loss(y_pred, y)
-            test_r2 = r2_score(y_true=y.detach().cpu().numpy(), y_pred=y_pred.detach().cpu().numpy())
+            test_r2 = r2_score(y_true=y.detach().cpu().numpy()[masks[s]], y_pred=y_pred.detach().cpu().numpy()[masks[s]])
             r2.append(test_r2)
             if test_r2 >= max(r2):
                 cv_pred[s] = y_pred.detach().cpu().numpy().flatten().tolist()
@@ -128,4 +128,4 @@ for s in range(len(sites)):
 #save the dataframe of the prediction   
 d = {"Site": sites_out, "Predictions": cv_pred}
 df = pd.DataFrame(d)
-df.to_csv(f"notouchy_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")   
+df.to_csv(f"lstm_lso_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")   
