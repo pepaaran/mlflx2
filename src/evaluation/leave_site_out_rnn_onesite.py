@@ -1,9 +1,11 @@
-#This is the final LSTM model with leave-one-site-out cross-validation
+# This is the final LSTM model with leave-one-site-out cross-validation
 # The model is trained only with one CV fold to test predicton consistency
 
 from model.rnn_model import Model
 from preprocess import prepare_df
+from utils import set_seed
 from sklearn.metrics import r2_score
+from torch.utils.tensorboard import SummaryWriter
 import torch
 import pandas as pd
 import argparse
@@ -26,9 +28,17 @@ parser.add_argument('-e', '--n_epochs', default=150, type=int,
 parser.add_argument('-c', '--conditional',  default=0, type=int,
                       help='enable conditioning')
 
+parser.add_argument('-b', '--batch_size', default=1, type=int,
+                    help='number of sites passed in a batch for back propagation')
+
+parser.add_argument('-o', '--output_file', default='', type=str,
+                    help='file name to save output')
+
 args = parser.parse_args()
 DEVICE = args.device
-torch.manual_seed(40)
+
+# Set random seeds for reproducibility
+set_seed(40)
 
 print("Starting leave-site-out on RNN model:")
 print(f"> Device: {args.device}")
@@ -36,9 +46,9 @@ print(f"> Epochs: {args.n_epochs}")
 print(f"> Condition on metadata: {args.conditional}")
 
 # Importing data
-data = pd.read_csv('../data/df_imputed.csv', index_col=0)
+data = pd.read_csv('../../data/processed/df_imputed.csv', index_col=0)
 data = data.drop(columns='date')
-raw = pd.read_csv('../data/df_20210510.csv', index_col=0)['GPP_NT_VUT_REF']
+raw = pd.read_csv('../../data/raw/df_20210510.csv', index_col=0)['GPP_NT_VUT_REF']
 raw = raw[raw.index != 'CN-Cng']
 
 sites = raw.index.unique()
@@ -89,13 +99,21 @@ for s in [0]:
     model = Model(INPUT_FEATURES, CONDITIONAL_FEATURES, HIDDEN_DIM, args.conditional, 1).to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters())
 
+    # Initiate tensorboard logging instance
+    writer = SummaryWriter()
+
+    # Initiate loss vector
     r2 = []
+
     for epoch in range(args.n_epochs):
         print(f"Epoch: {epoch+1}/{args.n_epochs}")
         train_loss = 0.0
         train_r2 = 0.0
         model.train()
         for (x, y, conditional) in zip(x_train, y_train, conditional_train):
+            print("Training data fed sequentially:\n")
+            print(x)
+
             x = torch.FloatTensor(x).to(DEVICE)
             y = torch.FloatTensor(y).to(DEVICE)
             c = torch.FloatTensor(conditional).to(DEVICE)
@@ -107,6 +125,10 @@ for s in [0]:
             train_loss += loss.item()
             train_r2 += r2_score(y_true=y.detach().cpu().numpy(), y_pred=y_pred.detach().cpu().numpy())
         
+        # Log tensorboard training values
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("R2/train", train_r2, epoch)
+
         model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(x_test).to(DEVICE)
@@ -119,15 +141,28 @@ for s in [0]:
             r2.append(test_r2)
             if test_r2 >= max(r2):
                 cv_pred[s] = y_pred.detach().cpu().numpy().flatten().tolist()
+
+        # Log tensorboard testing values
+        writer.add_scalar("Loss/test", test_loss, epoch)
+        writer.add_scalar("R2/test", test_r2, epoch)
     
+        print(f"Loss for epoch {epoch}:")
+        print(r2)
+
     cv_r2.append(max(r2))
     sites_out.append(sites[s])
     print(f"Test Site: {sites[s]} R2: {cv_r2[s]}")
     print("CV R2 cumulative mean: ", np.mean(cv_r2), " +- ", np.std(cv_r2))
     print("-------------------------------------------------------------------")
     
-    
+    # Close tensorboard
+    writer.close()
+
 #save the dataframe of the prediction   
 d = {"Site": sites_out, "Predictions": cv_pred}
 df = pd.DataFrame(d)
-df.to_csv(f"lstm_lso_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")   
+
+if len(args.output_file)==0:
+    df.to_csv(f"../../data/outputs/lstm_lso_1site_epochs_{args.n_epochs}_conditional_{args.conditional}.csv")   
+else:
+    df.to_csv("../../data/outputs/" + args.output_file)
